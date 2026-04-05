@@ -217,7 +217,7 @@ class FirecrackerVM:
         raise RuntimeError("Could not connect to VM")
 
     def run(self, cmd):
-        subprocess.run(self.ssh_pref + (cmd,))
+        return subprocess.run(self.ssh_pref + (cmd,), capture_output=True, text=True)
 
     def scp(self, from_, to):
         dest = f"root@{self.ip}:{to}"
