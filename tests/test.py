@@ -5,15 +5,20 @@ import time
 
 def print_results(result_tuple):
     description, passed, stdout, stderr, performance = result_tuple
+
     if passed:
-        print("PASSED:", description)
-        print("----- stdout -----")
-        print(stdout)
-        print("----- stderr -----")
-        print(stderr)
-        print("----- performance -----")
-        print(json.dumps(performance, indent=4))
-    
+        print("PASSED: ", end="")
+    else:
+        print("FAILED: ", end="")
+
+    print(description)
+    print("----- stdout -----")
+    print(stdout)
+    print("----- stderr -----")
+    print(stderr)
+    print("----- performance -----")
+    print(json.dumps(performance, indent=4))
+
 def ping_google():
     start = time.time()
 
