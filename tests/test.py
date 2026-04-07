@@ -32,6 +32,16 @@ def ping_google():
         result = fvm.run("ping -q -w 2 -c 1 google.com")
         return "Ping google", result.returncode == 0, {"stdout": result.stdout, "stderr": result.stderr}, {"created_in": created_in}
 
+def uname():
+    start = time.time()
+
+    with vm.FirecrackerVM() as fvm:
+        created_in = time.time() - start
+        result = fvm.run("uname -a")
+        return "uname -a", result.returncode == 0, {"stdout": result.stdout, "stderr": result.stderr}, {"created_in": created_in, "run_in": time.time() - start}
+
+
+
 def ping(from_, to):
     results = []
     result = subprocess.run(("ping", "-q", "-w", "1", "-c", "1", from_.ip), capture_output=True, text=True)
@@ -95,5 +105,6 @@ def ping_vms():
 
 
 if __name__ == "__main__":
-    #print_results(ping_google())
+    print_results(uname())
+    print_results(ping_google())
     print_results(ping_vms())
