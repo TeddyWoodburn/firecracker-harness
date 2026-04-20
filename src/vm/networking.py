@@ -1,6 +1,8 @@
 import json
 import subprocess
 
+from vm.utils import run
+
 def configure_networking():
     enable_forwarding_on_host()
     assert forwarding_enabled_on_host()
@@ -23,10 +25,10 @@ def forwarding_enabled_on_host():
         return f.read().strip() == "1"
 
 def create_firecracker_table():     
-    subprocess.run(["nft", "add", "table", "firecracker"], check=True)
+    run(("nft", "add", "table", "firecracker"))
 
 def create_pr_chain():
-    subprocess.run([
+    run((
         "nft",
         "add", "chain", "firecracker", "postrouting",
         "{", 
@@ -35,10 +37,10 @@ def create_pr_chain():
             "priority", "srcnat;",
             "policy", "accept;",
         "}",
-    ], check=True)
+    ))
 
 def create_filter_chain():
-    subprocess.run([
+    run((
         "nft",
         "add", "chain", "firecracker", "filter",
         "{", 
@@ -47,7 +49,7 @@ def create_filter_chain():
             "priority", "filter;",
             "policy", "accept;",
         "}",
-    ], check=True)
+    ))
 
 def get_vm_ip(vm_id):
     vm_n = vm_id * 4 + 2
@@ -60,31 +62,24 @@ def create_tap(vm_id):
 
     # delete if already exists, may fail if doesn't exist so no check
     subprocess.run(("ip", "link", "del", tap_name), capture_output=True)
-    subprocess.run(("ip", "tuntap", "add", tap_name, "mode", "tap"), 
-        capture_output=True, check=True)
-    subprocess.run(("ip", "addr", "add", f"{tap_ip}/30", "dev", tap_name),
-        capture_output=True, check=True)
-    subprocess.run(("ip", "link", "set", tap_name, "up"),
-        capture_output=True, check=True)
+    run(("ip", "tuntap", "add", tap_name, "mode", "tap"))
+    run(("ip", "addr", "add", f"{tap_ip}/30", "dev", tap_name))
+    run(("ip", "link", "set", tap_name, "up"))
 
     return tap_name, tap_ip
 
 def add_rules(vm):
     if_name = get_default_dev()
 
-    subprocess.run(("nft", "add", "rule", "firecracker", 
+    run(("nft", "add", "rule", "firecracker", 
         "postrouting", "ip", "saddr", vm.ip,
-        "oifname", if_name, "counter", "masquerade"),
-         capture_output=True,
-         check=True)
+        "oifname", if_name, "counter", "masquerade"))
 
-    subprocess.run(("nft", "add", "rule", "firecracker",
-        "filter", "iifname", vm.tap, "oifname", if_name, "accept"),
-         capture_output=True,
-         check=True)
+    run(("nft", "add", "rule", "firecracker",
+        "filter", "iifname", vm.tap, "oifname", if_name, "accept"))
 
 def get_default_dev():
-    ip_r = subprocess.run(("ip", "-j", "route", "list", "default"), capture_output=True, text=True)
+    ip_r = run(("ip", "-j", "route", "list", "default"))
     ip_j = json.loads(ip_r.stdout)
 
     if len(ip_j) == 0:
