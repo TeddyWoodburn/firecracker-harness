@@ -106,5 +106,5 @@ def ping_vms():
 
 if __name__ == "__main__":
     print_results(uname())
-    print_results(ping_google())
+    #print_results(ping_google())
     print_results(ping_vms())
