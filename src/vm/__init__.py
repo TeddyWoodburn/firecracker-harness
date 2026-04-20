@@ -8,6 +8,8 @@ import time
 
 import os, signal, atexit
 
+from vm.networking import configure_networking, configure_vm_host_networking
+
 def _cleanup_all_vms():
     for fvm in list(_active_vms):
         try:
@@ -24,26 +26,7 @@ atexit.register(_cleanup_all_vms)
 signal.signal(signal.SIGINT, _signal_handler)
 signal.signal(signal.SIGTERM, _signal_handler)
 
-subprocess.run(
-    ["sudo", "tee", "/proc/sys/net/ipv4/ip_forward"],
-    input=bytes("1\n", "ascii"),
-    capture_output=True,
-)
-
-subprocess.run(["sudo", "nft", "add", "table", "firecracker"])
-
-subprocess.run([
-    "sudo", "nft",
-    "add", "chain", "firecracker", "postrouting",
-    "{", "type", "nat", "hook", "postrouting", "priority", "srcnat;", "policy", "accept;", "}"
-])
-
-subprocess.run([
-    "sudo", "nft",
-    "add", "chain", "firecracker", "filter",
-    "{", "type", "filter", "hook", "forward", "priority", "filter;", "policy", "accept;", "}"
-])
-
+configure_networking()
 
 class IDs:
     def __init__(self):
@@ -74,7 +57,7 @@ class FirecrackerVM:
         self._copy_kernel(kernel)
         self._copy_image(rootfs_image)
         self._set_mac()
-        self._create_tap()
+        configure_vm_host_networking(self)
 
         self.ssh_opts = ("-o", "StrictHostKeyChecking=no", "-i", "/home/td/Documents/Code/td/scripts/firecracker/vm_key")
         self.ssh_pref = ("ssh",) + self.ssh_opts + (f"root@{self.ip}",)
@@ -166,33 +149,6 @@ class FirecrackerVM:
     def _set_mac(self):
         n = self.id * 4 + 2
         self.mac = f"06:00:AC:10:{n // 256:02x}:{n % 256:02x}"
-
-    def _set_device(self):
-        ip_r = subprocess.run(("ip", "-j", "route", "list", "default"), capture_output=True, text=True)
-        ip_j = json.loads(ip_r.stdout)
-        if len(ip_j) == 0:
-            self.device = "enlp0"
-        else:
-            self.device = ip_j[0]["dev"]
-
-    def _create_tap(self):
-        tap_n = self.id * 4 + 1
-        vm_n = self.id * 4 + 2
-
-        tap_ip = f"172.16.{tap_n // 256}.{tap_n % 256}" 
-        vm_ip = f"172.16.{vm_n // 256}.{vm_n % 256}" 
-        self.tap_ip = tap_ip
-        self.ip = vm_ip
-
-
-        self.tap = f"tap-vm{self.id}"
-        subprocess.run(("sudo", "ip", "link", "del", self.tap))
-        subprocess.run(("sudo", "ip", "tuntap", "add", self.tap, "mode", "tap"))
-        subprocess.run(("sudo", "ip", "addr", "add", f"{tap_ip}/30", "dev", self.tap))
-        subprocess.run(("sudo", "ip", "link", "set", self.tap, "up"))
-        self._set_device()
-        subprocess.run(("sudo", "nft", "add", "rule", "firecracker", "postrouting", "ip", "saddr", vm_ip, "oifname", self.device, "counter", "masquerade"))
-        subprocess.run(("sudo", "nft", "add", "rule", "firecracker", "filter", "iifname", self.tap, "oifname", self.device, "accept"))
 
     def _copy_kernel(self, kernel_path):
         shutil.copy2(src=kernel_path, dst= self.workdir / "kernel")
