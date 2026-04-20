@@ -67,7 +67,7 @@ class FirecrackerVM:
         self.proc = subprocess.Popen(
             ("/usr/local/bin/firecracker",
              "--api-sock", str(self.api_socket),
-             ), #"--enable-pci"),
+             ),
             stdout=self.log,
             stderr=self.log,
             stdin=subprocess.DEVNULL,  # Don't inherit stdin
@@ -143,9 +143,6 @@ class FirecrackerVM:
             self.fqdn = fqdn
             self.hostname = hostname
 
-        #time.sleep(2)
-        #self.run(f"ip route add default via {self.tap_ip} dev eth0")
-    
     def _set_mac(self):
         n = self.id * 4 + 2
         self.mac = f"06:00:AC:10:{n // 256:02x}:{n % 256:02x}"
@@ -195,7 +192,6 @@ class FirecrackerVM:
         return self
 
     def __exit__(self, exc_type, exc, tb):
-        #print(f"Exiting VM {self.id}!")
         try:
             self.proc.terminate()
             self.proc.wait(timeout=5)
