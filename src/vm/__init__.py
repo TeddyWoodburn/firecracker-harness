@@ -9,6 +9,7 @@ import time
 import os, signal, atexit
 
 from vm.networking import configure_networking, configure_vm_host_networking
+from vm.ids import tracker
 
 def _cleanup_all_vms():
     for fvm in list(_active_vms):
@@ -28,23 +29,9 @@ signal.signal(signal.SIGTERM, _signal_handler)
 
 configure_networking()
 
-class IDs:
-    def __init__(self):
-        self.ids = []
-        self.next_id = 0
-    
-    def acquire(self):
-        n = self.next_id    
-        self.next_id = n + 1
-        self.ids.append(n)
-        assert self.ids.count(n) == 1, "Could not assign ID"
-        return n
-
-id_tracker = IDs()
-
 class FirecrackerVM:
     def __init__(self, keep_filesystem=False, fqdn="", rootfs_image="/home/td/Documents/Code/td/scripts/firecracker/ubuntu-python.ext4", kernel="/home/td/Documents/Code/td/scripts/firecracker/vmlinux-6.1.155"):
-        self.id = id_tracker.acquire()
+        self.id = tracker.acquire()
         self.keep_filesystem = keep_filesystem
         self.workdir = Path(tempfile.mkdtemp(prefix=f"vm-{self.id}-"))
         self.firecracker_out = self.workdir / "firecracker-out.log"
