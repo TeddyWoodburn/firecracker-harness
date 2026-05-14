@@ -133,7 +133,7 @@ def all_vm_files_cleaned_up():
     results = {} 
 
     if dir_found is not None:
-        results["Directory not cleaned up:": dir_found]
+        results["Directory not cleaned up:"] = dir_found
     
     return passed, results
  
