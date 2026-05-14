@@ -12,6 +12,7 @@ import os, signal, atexit
 
 from vm.networking import configure_networking, configure_vm_host_networking
 from vm.ids import tracker
+from vm.cleanup import shutdown, files, fds
 
 def _cleanup_all_vms():
     for fvm in list(_active_vms):
@@ -194,16 +195,11 @@ class FirecrackerVM:
         return self
 
     def __exit__(self, exc_type, exc, tb):
-        try:
-            self.proc.terminate()
-            self.proc.wait(timeout=5)
-        except:
-            self.proc.kill()
-        
-        self.fd["log"].close()
+        shutdown(self)
+        fds(self.fd)
         
         if not self.keep_filesystem:
-            shutil.rmtree(self.files.workdir)
+            files(self.files)
         
         # Remove from active list
         try:
