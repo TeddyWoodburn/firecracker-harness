@@ -138,8 +138,25 @@ def files_cleaned_up_termed():
              passed = False
        
     return "files cleaned up (proc SIGTERMED)", passed, {"dir still exists": dir_found}, {"run_in": time.time() - start}
-    
+ 
+def files_cleaned_up_exception():
+    start = time.time()
+    r = subprocess.run((".venv/bin/python3", "run_and_error.py"), capture_output=True, text=True)
+
+    passed = True
+    dir_found = None
+
+    for f in Path("/tmp").iterdir():
+        if not f.is_dir():
+            continue
+        if f.name.startswith("vm-"):
+             dir_found = f
+             passed = False
+       
+    return "files cleaned up (python raises exception)", passed, {"dir still exists": dir_found, "python stderr": r.stderr}, {"run_in": time.time() - start}
+       
 if __name__ == "__main__":
+    print_results(files_cleaned_up_exception())
     print_results(uname())
     #print_results(ping_google())
     print_results(ping_vms())
