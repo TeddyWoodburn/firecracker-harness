@@ -6,6 +6,8 @@ import time
 from threading import Thread
 import subprocess
 
+from pathlib import Path
+
 def print_results(result_tuple):
     description, passed, details, performance = result_tuple
 
@@ -115,9 +117,31 @@ def files_cleaned_up():
     exists = {f"{f} exists": f.exists() for f in should_be_removed}
     
     return "files cleaned up", not any(exists.values()), exists, {"run_in": time.time() - start}
+
+def files_cleaned_up_termed():
+    start = time.time()
+    proc = subprocess.Popen((".venv/bin/python3", "run_forever.py"))
+
+    # this is a bit shit
+    time.sleep(5)
+    proc.terminate()
+    time.sleep(1)
+
+    passed = True
+    dir_found = None
+
+    for f in Path("/tmp").iterdir():
+        if not f.is_dir():
+            continue
+        if f.name.startswith("vm-"):
+             dir_found = f
+             passed = False
+       
+    return "files cleaned up (proc SIGTERMED)", passed, {"dir still exists": dir_found}, {"run_in": time.time() - start}
     
 if __name__ == "__main__":
     print_results(uname())
     #print_results(ping_google())
     print_results(ping_vms())
     print_results(files_cleaned_up())
+    print_results(files_cleaned_up_termed())
