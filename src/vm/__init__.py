@@ -190,7 +190,7 @@ class FirecrackerVM:
         r.raise_for_status()
     
     def __repr__(self):
-        return f"FirecrackerVM(id={self.id}, workdir={repr(self.workdir)})"
+        return f"FirecrackerVM(id={self.id}, workdir={repr(self.files.workdir)})"
     def __enter__(self):
         return self
 
