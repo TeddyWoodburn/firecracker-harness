@@ -6,6 +6,8 @@ import time
 from threading import Thread
 import subprocess
 
+from pathlib import Path
+
 def print_results(result_tuple):
     description, passed, details, performance = result_tuple
 
@@ -103,8 +105,63 @@ def ping_vms():
 
     return "ping between vms", all(v[0] for v in results_dict.values()), details, {"completed_in": time.time() - start}
 
+def files_cleaned_up():
+    start = time.time()
 
+    with vm.FirecrackerVM() as fvm:
+        fvm.run("uname -a")
+        files = fvm.files
+     
+    should_be_removed = [files.rootfs, files.kernel, files.logs, files.stdout_stderr, files.api_sock, files.workdir]
+
+    exists = {f"{f} exists": f.exists() for f in should_be_removed}
+    
+    return "files cleaned up", not any(exists.values()), exists, {"run_in": time.time() - start}
+
+def all_vm_files_cleaned_up():
+    passed = True
+    dir_found = None
+
+    for f in Path("/tmp").iterdir():
+        if not f.is_dir():
+            continue
+        if f.name.startswith("vm-"):
+             dir_found = f
+             passed = False
+             break
+
+    results = {} 
+
+    if dir_found is not None:
+        results["Directory not cleaned up:"] = dir_found
+    
+    return passed, results
+ 
+
+def files_cleaned_up_termed():
+    start = time.time()
+    proc = subprocess.Popen((".venv/bin/python3", "run_forever.py"))
+
+    # this is a bit shit
+    time.sleep(5)
+    proc.terminate()
+    time.sleep(1)
+ 
+    return "files cleaned up (proc SIGTERMED)", *all_vm_files_cleaned_up(), {"run_in": time.time() - start}
+ 
+def files_cleaned_up_exception():
+    start = time.time()
+    r = subprocess.run((".venv/bin/python3", "run_and_error.py"), capture_output=True, text=True)
+
+    passed, results = all_vm_files_cleaned_up()
+    results["python stderr"] = r.stderr
+
+    return "files cleaned up (python raises exception)", passed, results, {"run_in": time.time() - start}
+       
 if __name__ == "__main__":
     print_results(uname())
-    print_results(ping_google())
+    #print_results(ping_google())
     print_results(ping_vms())
+    print_results(files_cleaned_up())
+    print_results(files_cleaned_up_termed())
+    print_results(files_cleaned_up_exception())

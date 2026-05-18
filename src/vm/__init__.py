@@ -6,10 +6,13 @@ import tempfile
 import requests_unixsocket
 import time
 
+from dataclasses import dataclass
+
 import os, signal, atexit
 
 from vm.networking import configure_networking, configure_vm_host_networking
 from vm.ids import tracker
+from vm.cleanup import shutdown, files, fds
 
 def _cleanup_all_vms():
     for fvm in list(_active_vms):
@@ -29,20 +32,31 @@ signal.signal(signal.SIGTERM, _signal_handler)
 
 configure_networking()
 
+@dataclass
+class Files:
+    workdir: Path # the directory on the host to use for the log, stdout/stderr, api_sock, and write-enabled filesystem (may be a copy of the provided rootfs)
+    rootfs: Path # the path of the rootfs, e.g Path("/var/lib/firecracker/debian.ext4")
+    kernel: Path # the location of the kernel image to use
+    api_sock: Path # the unix socket we will use to communicate with Firecracker
+    logs: Path # Firecracker logger configured to use this path
+    stdout_stderr: Path # the captured stdout and stderr of the Firecracker process
+    
+
 class FirecrackerVM:
     def __init__(self, keep_filesystem=False, fqdn="", rootfs_image="/home/td/Documents/Code/td/scripts/firecracker/ubuntu-python.ext4", kernel="/home/td/Documents/Code/td/scripts/firecracker/vmlinux-6.1.155"):
         self.id = tracker.acquire()
-        self.keep_filesystem = keep_filesystem
-        self.workdir = Path(tempfile.mkdtemp(prefix=f"vm-{self.id}-"))
-        self.firecracker_out = self.workdir / "firecracker-out.log"
-        self.firecracker_log = self.workdir / "firecracker.log"
-        self.api_socket = self.workdir/ "api.sock"
-  
-        self.session = requests_unixsocket.Session()
-        self.base_url = f"http+unix://{self.api_socket.as_posix().replace('/', '%2F')}"
 
-        self._copy_kernel(kernel)
-        self._copy_image(rootfs_image)
+        self.keep_filesystem = keep_filesystem
+
+        workdir = Path(tempfile.mkdtemp(prefix=f"vm-{self.id}-"))
+        api_sock = workdir/ "api.sock"
+        log = workdir / "firecracker.log"
+        stdout_stderr = workdir / "firecracker-stdout-stderr.txt"
+        self.files = Files(workdir, self._copy_image(rootfs_image, workdir), self._copy_kernel(kernel, workdir), api_sock, log, stdout_stderr)
+
+        self.session = requests_unixsocket.Session()
+        self.base_url = f"http+unix://{self.files.api_sock.as_posix().replace('/', '%2F')}"
+
         self._set_mac()
         configure_vm_host_networking(self)
 
@@ -50,26 +64,26 @@ class FirecrackerVM:
         self.ssh_pref = ("ssh",) + self.ssh_opts + (f"root@{self.ip}",)
 
         
-        self.log = open(self.firecracker_out, "wb")
+        self.fd = {"log": open(self.files.stdout_stderr, "wb")}
         self.proc = subprocess.Popen(
             ("/usr/local/bin/firecracker",
-             "--api-sock", str(self.api_socket),
+             "--api-sock", str(self.files.api_sock),
              ),
-            stdout=self.log,
-            stderr=self.log,
+            stdout=self.fd["log"],
+            stderr=self.fd["log"],
             stdin=subprocess.DEVNULL,  # Don't inherit stdin
             start_new_session=True,     # Start in new process group
         )
 
         _active_vms.append(self)
         
-        while not self.api_socket.exists():
+        while not self.files.api_sock.exists():
             time.sleep(0.02)
         
         self._put(
             "/logger",
             {
-               "log_path": str(self.firecracker_log),
+               "log_path": str(self.files.logs),
                 "level": "Debug",
                 "show_level": True,
                 "show_log_origin": True,
@@ -79,7 +93,7 @@ class FirecrackerVM:
         self._put(
             "/boot-source",
             {
-                "kernel_image_path": str(self.workdir / "kernel"),
+                "kernel_image_path": str(self.files.kernel),
                 "boot_args": f"console=ttyS0 reboot=k panic=1 ip={self.ip}::{self.tap_ip}:255.255.255.252::eth0:off", ##
             },
         )       
@@ -88,7 +102,7 @@ class FirecrackerVM:
             "/drives/rootfs",
             {
                 "drive_id": "rootfs",
-                "path_on_host": str(self.workdir / "rootfs.ext4"),
+                "path_on_host": str(self.files.rootfs),
                 "is_root_device": True,
                 "is_read_only": False,
             },
@@ -134,11 +148,13 @@ class FirecrackerVM:
         n = self.id * 4 + 2
         self.mac = f"06:00:AC:10:{n // 256:02x}:{n % 256:02x}"
 
-    def _copy_kernel(self, kernel_path):
-        shutil.copy2(src=kernel_path, dst= self.workdir / "kernel")
+    def _copy_kernel(self, kernel_path, workdir):
+        shutil.copy2(src=kernel_path, dst= workdir / "kernel")
+        return workdir / "kernel"
 
-    def _copy_image(self, image_path):
-        shutil.copy2(src=image_path, dst= self.workdir / "rootfs.ext4")
+    def _copy_image(self, image_path, workdir):
+        shutil.copy2(src=image_path, dst= workdir / "rootfs.ext4")
+        return workdir / "rootfs.ext4"
 
     def remove_old_host_key(self):
         kh = Path("~/.ssh/known_hosts").expanduser()
@@ -174,21 +190,16 @@ class FirecrackerVM:
         r.raise_for_status()
     
     def __repr__(self):
-        return f"FirecrackerVM(id={self.id}, workdir={repr(self.workdir)})"
+        return f"FirecrackerVM(id={self.id}, workdir={repr(self.files.workdir)})"
     def __enter__(self):
         return self
 
     def __exit__(self, exc_type, exc, tb):
-        try:
-            self.proc.terminate()
-            self.proc.wait(timeout=5)
-        except:
-            self.proc.kill()
-        
-        self.log.close()
+        shutdown(self)
+        fds(self.fd)
         
         if not self.keep_filesystem:
-            shutil.rmtree(self.workdir)
+            files(self.files)
         
         # Remove from active list
         try:
