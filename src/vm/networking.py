@@ -19,9 +19,7 @@ def configure_vm_host_networking(vm):
 def enable_forwarding_on_host():
     # This lets us run with lower permissions if ip forwarding
     # has already been enabled
-    with open("/proc/sys/net/ipv4/ip_forward", "r") as f:
-        if f.read().strip() == "1":
-            return
+    if forwarding_enabled_on_host(): return
 
     with open("/proc/sys/net/ipv4/ip_forward", "a") as f:
         f.write("1\n")
