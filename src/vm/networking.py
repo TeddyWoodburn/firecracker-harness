@@ -1,8 +1,29 @@
 import json
 import subprocess
+from dataclasses import dataclass
 
 from vm.utils import run
 
+@dataclass
+class VMNetwork:
+    vm_ip: str
+    tap_ip: str
+    tap: str
+    dev: str
+
+def create_vm_network(vm):
+    return VMNetwork(
+        vm_ip = get_vm_ip(vm.id),
+        tap_ip = get_tap_ip(vm.id),
+        tap = f"fc-tap-{vm.id}",
+        dev = get_default_dev()
+    )
+
+def apply_vm_network(vm_network):
+    create_tap(vm_network.tap, vm_network.tap_ip)
+    add_rules(vm_network.vm_ip, vm_network.tap, vm_network.dev)
+
+    
 def configure_networking():
     enable_forwarding_on_host()
     assert forwarding_enabled_on_host()
@@ -10,11 +31,6 @@ def configure_networking():
     create_firecracker_table()
     create_pr_chain()
     create_filter_chain()
-
-def configure_vm_host_networking(vm):
-    vm.ip = get_vm_ip(vm.id) 
-    vm.tap, vm.tap_ip = create_tap(vm.id)
-    add_rules(vm)
 
 def enable_forwarding_on_host():
     # This lets us run with lower permissions if ip forwarding
@@ -59,28 +75,25 @@ def get_vm_ip(vm_id):
     vm_n = vm_id * 4 + 2
     return f"172.16.{vm_n // 256}.{vm_n % 256}" 
 
-def create_tap(vm_id):
+def get_tap_ip(vm_id):
     tap_n = vm_id * 4 + 1
-    tap_ip = f"172.16.{tap_n // 256}.{tap_n % 256}" 
-    tap_name = f"fc-tap-{vm_id}"
+    return f"172.16.{tap_n // 256}.{tap_n % 256}" 
 
+def create_tap(tap_name, tap_ip):
     # delete if already exists, may fail if doesn't exist so no check
     subprocess.run(("ip", "link", "del", tap_name), capture_output=True)
     run(("ip", "tuntap", "add", tap_name, "mode", "tap"))
     run(("ip", "addr", "add", f"{tap_ip}/30", "dev", tap_name))
     run(("ip", "link", "set", tap_name, "up"))
+    return
 
-    return tap_name, tap_ip
-
-def add_rules(vm):
-    if_name = get_default_dev()
-
+def add_rules(vm_ip, tap, device):
     run(("nft", "add", "rule", "firecracker", 
-        "postrouting", "ip", "saddr", vm.ip,
-        "oifname", if_name, "counter", "masquerade"))
+        "postrouting", "ip", "saddr", vm_ip,
+        "oifname", device, "counter", "masquerade"))
 
     run(("nft", "add", "rule", "firecracker",
-        "filter", "iifname", vm.tap, "oifname", if_name, "accept"))
+        "filter", "iifname", tap, "oifname", device, "accept"))
 
 def get_default_dev():
     ip_r = run(("ip", "-j", "route", "list", "default"))
