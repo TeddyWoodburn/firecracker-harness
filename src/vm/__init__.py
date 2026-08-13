@@ -10,7 +10,7 @@ from dataclasses import dataclass
 
 import os, signal, atexit
 
-from vm.networking import configure_networking, create_vm_network, apply_vm_network
+from vm.networking import configure_networking, create_vm_network, remove_vm_network
 from vm.ids import tracker
 from vm.cleanup import shutdown, files, fds
 
@@ -59,8 +59,7 @@ class FirecrackerVM:
 
         self._set_mac()
         self.network = create_vm_network(self)
-        apply_vm_network(self.network)
-
+        print(self.network)
         self.ssh_opts = ("-o", "StrictHostKeyChecking=no", "-i", "/home/td/Documents/Code/td/scripts/firecracker/vm_key")
         self.ssh_pref = ("ssh",) + self.ssh_opts + (f"root@{self.network.vm_ip}",)
 
@@ -197,6 +196,7 @@ class FirecrackerVM:
 
     def __exit__(self, exc_type, exc, tb):
         shutdown(self)
+        remove_vm_network(self.network)
         fds(self.fd)
         
         if not self.keep_filesystem:

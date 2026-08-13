@@ -5,24 +5,41 @@ from dataclasses import dataclass
 from vm.utils import run
 
 @dataclass
+class NFTRule:
+    table: str
+    chain: str
+    handle: int
+
+@dataclass
 class VMNetwork:
     vm_ip: str
     tap_ip: str
     tap: str
     dev: str
+    rules: tuple[NFTRule]
 
 def create_vm_network(vm):
+    vm_ip = get_vm_ip(vm.id)
+    tap_ip = get_tap_ip(vm.id)
+    tap = f"fc-tap-{vm.id}"
+    dev = get_default_dev()
+
+    create_tap(tap, tap_ip)
+
+    rules = add_rules(vm_ip, tap, dev)
+
     return VMNetwork(
-        vm_ip = get_vm_ip(vm.id),
-        tap_ip = get_tap_ip(vm.id),
-        tap = f"fc-tap-{vm.id}",
-        dev = get_default_dev()
+        vm_ip = vm_ip,
+        tap_ip = tap_ip,
+        tap = tap,
+        dev = dev,
+        rules = rules
     )
 
-def apply_vm_network(vm_network):
-    create_tap(vm_network.tap, vm_network.tap_ip)
-    add_rules(vm_network.vm_ip, vm_network.tap, vm_network.dev)
-
+def remove_vm_network(vm_network):
+    run(("ip", "link", "del", vm_network.tap))
+    for rule in vm_network.rules:
+        delete_rule(rule)
     
 def configure_networking():
     enable_forwarding_on_host()
@@ -85,15 +102,27 @@ def create_tap(tap_name, tap_ip):
     run(("ip", "tuntap", "add", tap_name, "mode", "tap"))
     run(("ip", "addr", "add", f"{tap_ip}/30", "dev", tap_name))
     run(("ip", "link", "set", tap_name, "up"))
-    return
+
+def delete_tap(tap_name):
+    run(("ip", "link", "del", tap_name))
 
 def add_rules(vm_ip, tap, device):
-    run(("nft", "add", "rule", "firecracker", 
-        "postrouting", "ip", "saddr", vm_ip,
+    return (add_pr_rule(vm_ip, device), add_filter_rule(device, tap))
+
+def nft_add_rule(args):
+    r = run(("nft", "-eaj", "add", "rule", "firecracker") + args)
+    j = json.loads(r.stdout)["nftables"][0]["add"]["rule"]
+    return NFTRule(j["table"], j["chain"], j["handle"])
+
+def add_pr_rule(vm_ip, device):
+    return nft_add_rule(("postrouting", "ip", "saddr", vm_ip,
         "oifname", device, "counter", "masquerade"))
 
-    run(("nft", "add", "rule", "firecracker",
-        "filter", "iifname", tap, "oifname", device, "accept"))
+def add_filter_rule(device, tap):
+    return nft_add_rule(("filter", "iifname", tap, "oifname", device, "accept"))
+
+def delete_rule(rule):
+    run(("nft", "delete", "rule", rule.table, rule.chain, "handle", str(rule.handle)))
 
 def get_default_dev():
     ip_r = run(("ip", "-j", "route", "list", "default"))
