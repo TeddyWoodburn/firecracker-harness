@@ -59,7 +59,6 @@ class FirecrackerVM:
 
         self._set_mac()
         self.network = create_vm_network(self)
-        print(self.network)
         self.ssh_opts = ("-o", "StrictHostKeyChecking=no", "-i", "/home/td/Documents/Code/td/scripts/firecracker/vm_key")
         self.ssh_pref = ("ssh",) + self.ssh_opts + (f"root@{self.network.vm_ip}",)
 
