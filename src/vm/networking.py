@@ -18,7 +18,15 @@ class VMNetwork:
     dev: str
     rules: tuple[NFTRule]
 
-def create_vm_network(vm):
+def configure_networking(): # only needs to be called once
+    enable_forwarding_on_host()
+    assert forwarding_enabled_on_host()
+    
+    create_firecracker_table()
+    create_pr_chain()
+    create_filter_chain()
+
+def create_vm_network(vm): # needs to be called per vm
     vm_ip = get_vm_ip(vm.id)
     tap_ip = get_tap_ip(vm.id)
     tap = f"fc-tap-{vm.id}"
@@ -41,14 +49,6 @@ def remove_vm_network(vm_network):
     for rule in vm_network.rules:
         delete_rule(rule)
     
-def configure_networking():
-    enable_forwarding_on_host()
-    assert forwarding_enabled_on_host()
-    
-    create_firecracker_table()
-    create_pr_chain()
-    create_filter_chain()
-
 def enable_forwarding_on_host():
     # This lets us run with lower permissions if ip forwarding
     # has already been enabled
@@ -106,9 +106,6 @@ def create_tap(tap_name, tap_ip):
 def delete_tap(tap_name):
     run(("ip", "link", "del", tap_name))
 
-def add_rules(vm_ip, tap, device):
-    return (add_pr_rule(vm_ip, device), add_filter_rule(device, tap))
-
 def nft_add_rule(args):
     r = run(("nft", "-eaj", "add", "rule", "firecracker") + args)
     j = json.loads(r.stdout)["nftables"][0]["add"]["rule"]
@@ -120,6 +117,9 @@ def add_pr_rule(vm_ip, device):
 
 def add_filter_rule(device, tap):
     return nft_add_rule(("filter", "iifname", tap, "oifname", device, "accept"))
+
+def add_rules(vm_ip, tap, device):
+    return (add_pr_rule(vm_ip, device), add_filter_rule(device, tap))
 
 def delete_rule(rule):
     run(("nft", "delete", "rule", rule.table, rule.chain, "handle", str(rule.handle)))
