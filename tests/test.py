@@ -46,12 +46,12 @@ def uname():
 
 def ping(from_, to):
     results = []
-    result = subprocess.run(("ping", "-q", "-w", "1", "-c", "1", from_.ip), capture_output=True, text=True)
-    results.append(("host", from_.ip, result.returncode == 0))
+    result = subprocess.run(("ping", "-q", "-w", "1", "-c", "1", from_.network.vm_ip), capture_output=True, text=True)
+    results.append(("host", from_.network.vm_ip, result.returncode == 0))
     
     for target in to:
-        result = from_.run(f"ping -w 5 -c 1 -v {target.ip}")
-        results.append((from_.ip, target.ip, result.returncode == 0))
+        result = from_.run(f"ping -w 5 -c 1 -v {target.network.vm_ip}")
+        results.append((from_.network.vm_ip, target.network.vm_ip, result.returncode == 0))
     
     return all(r[2] for r in results), results 
 
@@ -69,7 +69,7 @@ def ping_when_all_ready(vm_list, results_dict, n, timeout=20):
             raise RuntimeError("Timed out waiting for the other vms to come up")
         
         passed, results = ping(fvm, vm_list)
-        results_dict[fvm.ip] = passed, results
+        results_dict[fvm.network.vm_ip] = passed, results
 
         while time.time() < start + timeout:
             if len(results_dict) == n:

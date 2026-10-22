@@ -10,7 +10,7 @@ from dataclasses import dataclass
 
 import os, signal, atexit
 
-from vm.networking import configure_networking, configure_vm_host_networking
+from vm.networking import configure_networking, create_vm_network, remove_vm_network
 from vm.ids import tracker
 from vm.cleanup import shutdown, files, fds
 
@@ -58,10 +58,9 @@ class FirecrackerVM:
         self.base_url = f"http+unix://{self.files.api_sock.as_posix().replace('/', '%2F')}"
 
         self._set_mac()
-        configure_vm_host_networking(self)
-
+        self.network = create_vm_network(self)
         self.ssh_opts = ("-o", "StrictHostKeyChecking=no", "-i", "/home/td/Documents/Code/td/scripts/firecracker/vm_key")
-        self.ssh_pref = ("ssh",) + self.ssh_opts + (f"root@{self.ip}",)
+        self.ssh_pref = ("ssh",) + self.ssh_opts + (f"root@{self.network.vm_ip}",)
 
         
         self.fd = {"log": open(self.files.stdout_stderr, "wb")}
@@ -94,7 +93,7 @@ class FirecrackerVM:
             "/boot-source",
             {
                 "kernel_image_path": str(self.files.kernel),
-                "boot_args": f"console=ttyS0 reboot=k panic=1 ip={self.ip}::{self.tap_ip}:255.255.255.252::eth0:off", ##
+                "boot_args": f"console=ttyS0 reboot=k panic=1 ip={self.network.vm_ip}::{self.network.tap_ip}:255.255.255.252::eth0:off", ##
             },
         )       
 
@@ -113,7 +112,7 @@ class FirecrackerVM:
             {
                 "iface_id": "eth0",
                 "guest_mac": self.mac,
-                "host_dev_name": self.tap,
+                "host_dev_name": self.network.tap,
             },
         )       
 
@@ -158,7 +157,7 @@ class FirecrackerVM:
 
     def remove_old_host_key(self):
         kh = Path("~/.ssh/known_hosts").expanduser()
-        rm = ("ssh-keygen", "-f", str(kh), "-R", self.ip)
+        rm = ("ssh-keygen", "-f", str(kh), "-R", self.network.vm_ip)
         r = subprocess.run(rm, capture_output=True)
 
     def _wait_ready(self, timeout=10):
@@ -176,7 +175,7 @@ class FirecrackerVM:
         return subprocess.run(self.ssh_pref + (cmd,), capture_output=True, text=True)
 
     def scp(self, from_, to):
-        dest = f"root@{self.ip}:{to}"
+        dest = f"root@{self.network.vm_ip}:{to}"
         cmd = ("scp",) + self.ssh_opts + (from_, dest,)
         r = subprocess.run(cmd, capture_output=True)
     
@@ -196,6 +195,7 @@ class FirecrackerVM:
 
     def __exit__(self, exc_type, exc, tb):
         shutdown(self)
+        remove_vm_network(self.network)
         fds(self.fd)
         
         if not self.keep_filesystem:
